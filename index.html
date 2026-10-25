@@ -22,6 +22,7 @@ html,body{height:100%;margin:0;overscroll-behavior:none;background:var(--bg);col
 .app{height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
 /* 用 fixed + inset:0 贴满当前可见区域，不依赖 100vh / 100dvh（iOS 浏览器工具栏收起时这两个值会偏小，导致底栏悬空） */
 body{position:fixed;top:0;left:0;right:0;bottom:0;width:auto;height:auto;overflow:hidden}
+#list,.ls,#cardsPage,#cfgPage,#call,#lb,.sheet,#modal,#mc{height:var(--H,100%)}
 .app{height:100%}
 header{display:grid;grid-template-columns:88px 1fr 88px;align-items:center;padding:6px 10px 8px}
 .who{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
@@ -1762,7 +1763,8 @@ function bgTab(body){
       ['通知权限',np],
       ['Service Worker',swState],
       ['保活音频',keepAudio?(keepAudio.paused?'已暂停':'播放中'):'未启动'],
-      ['锁屏播放卡片',md?(md.title+' · '+md.artist):'未设置']
+      ['锁屏播放卡片',md?(md.title+' · '+md.artist):'未设置'],
+      ['视口高度',innerHeight+' / 可视 '+Math.round(window.visualViewport?visualViewport.height:0)+' / 屏幕 '+screen.height+' / 页面 '+Math.round($('app').getBoundingClientRect().height)]
     ];
     st.innerHTML='';rows.forEach(([k,v])=>{const r=h('div','bgrow');r.append(h('span','',k),h('b','',v));st.append(r)});
   };
@@ -1796,14 +1798,25 @@ function bgTab(body){
 
 /* ========== 锁屏：键盘弹出也不让页面晃动，禁止双指缩放 ========== */
 (()=>{
-  const vv=window.visualViewport,app=$('app');let raf=0,lastH=-1;
+  const vv=window.visualViewport,app=$('app');let raf=0,lastH=-1,fullH=0;
+  const probe=document.createElement('div');probe.style.cssText='position:fixed;top:0;bottom:0;left:0;width:1px;visibility:hidden;pointer-events:none';document.body.append(probe);
   const typing=()=>{const a=document.activeElement;return !!a&&(a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&!/^(checkbox|radio|file|color|range|button|submit)$/.test(a.type)))};
   const apply=()=>{
     raf=0;
     /* 键盘没弹出时不用 visualViewport 的高度（iOS 主屏幕模式下它可能偏小，会让底栏悬空），直接交给 CSS 的整屏高度 */
     const kb=typing()&&vv&&vv.height<innerHeight-80;
-    const h=kb?vv.height:0;
-    if(h!==lastH){lastH=h;app.style.height=h?h+'px':''}
+    if(!kb){
+      /* iOS 主屏幕模式下 innerHeight / 100% 可能比真实屏幕矮一截（底栏悬空），这里取几个候选里最大的、并在主屏幕模式下直接用屏幕高度 */
+      const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+      const sh=innerWidth<=innerHeight?screen.height:screen.width;
+      let H=Math.max(innerHeight,Math.round(probe.getBoundingClientRect().height));
+      if(standalone&&Math.abs(screen.width-innerWidth)<=1&&sh>H&&sh-H<200)H=sh;
+      if(H!==fullH){fullH=H;document.documentElement.style.setProperty('--H',H+'px')}
+      document.body.style.height=H+'px';document.body.style.bottom='auto';
+      document.documentElement.style.height=H+'px';
+    }
+    const h=kb?vv.height:fullH;
+    if(h!==lastH){lastH=h;app.style.height=h+'px'}
     document.documentElement.style.setProperty('--vvh',(kb?vv.height:innerHeight)+'px');document.documentElement.style.setProperty('--vvt',(vv?vv.offsetTop:0)+'px');
     app.style.transform=kb&&vv.offsetTop>0?'translate3d(0,'+vv.offsetTop+'px,0)':'';
   };
@@ -1811,7 +1824,7 @@ function bgTab(body){
   if(vv){vv.addEventListener('resize',sched);vv.addEventListener('scroll',sched)}
   addEventListener('resize',sched);addEventListener('orientationchange',sched);addEventListener('pageshow',sched);
   /* 键盘收起后 iOS 常常不及时恢复：连续多次重算，并把被键盘顶偏的页面滚回原位 */
-  const settle=()=>{[0,60,160,320,600,1000,1600].forEach(d=>setTimeout(()=>{apply();if(!typing()||!(vv&&vv.height<innerHeight-80)){if(scrollY||(vv&&vv.offsetTop))scrollTo(0,0);app.style.transform='';if(!typing()){lastH=-1;app.style.height='';apply()}}},d))};
+  const settle=()=>{[0,60,160,320,600,1000,1600].forEach(d=>setTimeout(()=>{apply();if(!typing()||!(vv&&vv.height<innerHeight-80)){if(scrollY||(vv&&vv.offsetTop))scrollTo(0,0);app.style.transform='';if(!typing()){lastH=-1;apply()}}},d))};
   document.addEventListener('focusin',()=>{sched();setTimeout(sched,300);setTimeout(sched,700)});
   document.addEventListener('focusout',settle);
   if(vv)vv.addEventListener('resize',()=>{if(!(vv.height<innerHeight-80))settle()});
