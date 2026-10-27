@@ -18,7 +18,11 @@
 :root{--blue:#3b8cf7;--gray:#e9e9eb;--bm:#3b8cf7;--bmc:#fff;--bt:#e9e9eb;--btc:#000;--bg:#fff;--ink:#000;--mute:#8e8e93;--line:#d8d8dc;--glow:rgba(0,0,0,.07);--veil:rgba(255,255,255,.4)}
 @media(prefers-color-scheme:dark){:root{--gray:#262629;--bt:#262629;--btc:#fff;--bg:#000;--ink:#fff;--line:#3a3a3e;--glow:rgba(255,255,255,.05);--veil:rgba(0,0,0,.4)}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;margin:0;overscroll-behavior:none;background:var(--bg);color:var(--ink);font:17px/1.35 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
+html,body{height:100%;margin:0;overscroll-behavior:none;background:var(--bg);background-color:var(--bg);color:var(--ink);font:17px/1.35 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
+html{min-height:100%;-webkit-text-size-adjust:100%}
+body{min-height:100%;background:var(--bg)!important}
+.app{background:var(--bg);min-height:0;min-height:100%}
+@supports (height: 100dvh){html,body{min-height:100dvh}}
 .app{height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
 /* 用 fixed + inset:0 贴满当前可见区域，不依赖 100vh / 100dvh（iOS 浏览器工具栏收起时这两个值会偏小，导致底栏悬空） */
 body{position:fixed;top:0;left:0;right:0;bottom:0;width:auto;height:auto;overflow:hidden}
@@ -1816,7 +1820,7 @@ function bgTab(body){
       const sh=innerWidth<=innerHeight?screen.height:screen.width;
       const H=Math.max(innerHeight,Math.round(probe.getBoundingClientRect().height));
       if(H!==fullH){fullH=H;document.documentElement.style.setProperty('--H',H+'px')}
-      document.body.style.height=H+'px';document.body.style.bottom='auto';document.documentElement.style.height=H+'px';
+      document.body.style.height=H+'px';document.body.style.bottom='auto';document.documentElement.style.height=Math.max(H,screen.height||H)+'px';document.body.style.backgroundColor=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()||'#fff';document.documentElement.style.backgroundColor=document.body.style.backgroundColor;
       /* 网页底边离屏幕底边还有一段距离时，底部安全区已经不在网页里，不再额外留白 */
       const gap=standalone?sh-H:0,man=G.sys&&G.sys.bottomPad;
       const val=(typeof man==='number')?man:(gap>20?0:null);
@@ -2352,16 +2356,45 @@ function exportFullBackup(){
   toast('完整备份已导出');
 }
 function importFullBackup(){
-  const f=document.createElement('input');f.type='file';f.accept='.json,application/json';
-  f.onchange=()=>{const file=f.files&&f.files[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{try{
-    const d=JSON.parse(rd.result),st=d&&d.state;
-    if(!st||!Array.isArray(st.contacts)||!Array.isArray(st.cards)||!Array.isArray(st.groups))throw Error('invalid');
-    askYes('导入完整备份会替换当前联系人、聊天记录、字卡和装扮。建议先导出当前备份。确定继续吗？',async()=>{
-      G.contacts=st.contacts;G.cards=st.cards;G.groups=st.groups;G.cardSeq=st.cardSeq||1;G.skin={...SKIN_DEF,...(st.skin||{})};G.skins=Array.isArray(st.skins)?st.skins:[];G.sys=st.sys||G.sys;
-      G.cur=null;G.contacts.forEach(ct=>{ct.cfg={...DEF_CFG,...(ct.cfg||{})};ct.msgs=ct.msgs||[];ct.letters=ct.letters||[];ct.moments=ct.moments||[];ct.momPending=ct.momPending||[];ct.momUnread=ct.momUnread||0;ct.momPlan=ct.momPlan||null;ct.momDay=ct.momDay||{day:'',count:0};ct.profile={name:'联系人',avatar:'',myAvatar:'',bg:'',myName:'我',...(ct.profile||{})};ct.status=ct.status||{text:'',at:0};ct.sel=ct.sel||G.groups.map(g=>g.id)});
-      V.q='';V.type='all';V.group='all';V.multi=false;V.sel.clear();applySkin();view='list';closePop();closePP();$('list').hidden=false;['cardsPage','cfgPage'].forEach(i=>{const e=$(i);if(e)e.hidden=true});renderList();booted=true;await kv.set('state',G);flush();toast('完整备份导入成功');
-    },'确认导入');
-  }catch(e){toast('备份文件无效，未更改现有数据')}};rd.readAsText(file)};f.click();
+  /* iOS 主屏幕模式对脱离 DOM 的 file input.click() 处理不稳定；输入框挂载到 body，并在读取后清理。 */
+  const f=document.createElement('input');f.type='file';f.accept='.json,application/json';f.setAttribute('aria-label','选择完整备份文件');
+  f.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none';
+  document.body.append(f);
+  let handled=false;
+  const cleanup=()=>{setTimeout(()=>{try{f.remove()}catch(e){}},1000)};
+  f.onchange=()=>{
+    if(handled)return;handled=true;
+    const file=f.files&&f.files[0];if(!file){cleanup();return}
+    if(file.size===0){toast('备份文件是空的，请重新选择');cleanup();return}
+    toast('正在读取完整备份…');
+    const rd=new FileReader();
+    rd.onerror=()=>{toast('读取失败，请把备份文件先存储到「文件」App 后重试');cleanup()};
+    rd.onabort=()=>{toast('读取已取消，请重新选择备份');cleanup()};
+    rd.onload=()=>{
+      let st;
+      try{
+        const raw=typeof rd.result==='string'?rd.result:'';
+        if(!raw.trim())throw Error('empty');
+        const d=JSON.parse(raw);st=d&&d.state;
+        if(!st||!Array.isArray(st.contacts)||!Array.isArray(st.cards)||!Array.isArray(st.groups))throw Error('invalid');
+        if(st.contacts.some(ct=>!ct||typeof ct!=='object'))throw Error('contacts');
+      }catch(e){toast('无法识别此完整备份，请选择由本网站导出的「聊天网站完整备份」JSON 文件');cleanup();return}
+      cleanup();
+      askYes('已读取完整备份（'+Math.max(1,Math.round(file.size/1024))+' KB）。导入会替换当前联系人、聊天记录、字卡和装扮，建议先导出当前备份。确定继续吗？',async()=>{
+        try{
+          G.contacts=st.contacts;G.cards=st.cards;G.groups=st.groups;G.cardSeq=st.cardSeq||1;G.skin={...SKIN_DEF,...(st.skin||{})};G.skins=Array.isArray(st.skins)?st.skins:[];G.sys={...(G.sys||{}),...(st.sys||{})};
+          G.cur=null;G.contacts.forEach(ct=>{ct.cfg={...DEF_CFG,...(ct.cfg||{})};ct.msgs=Array.isArray(ct.msgs)?ct.msgs:[];ct.letters=Array.isArray(ct.letters)?ct.letters:[];ct.moments=Array.isArray(ct.moments)?ct.moments:[];ct.momPending=Array.isArray(ct.momPending)?ct.momPending:[];ct.momUnread=ct.momUnread||0;ct.momPlan=ct.momPlan||null;ct.momDay=ct.momDay||{day:'',count:0};ct.profile={name:'联系人',avatar:'',myAvatar:'',bg:'',callBg:'',myName:'我',...(ct.profile||{})};ct.status=ct.status||{text:'',at:0};ct.sel=Array.isArray(ct.sel)?ct.sel:G.groups.map(g=>g.id)});
+          V.q='';V.type='all';V.group='all';V.multi=false;V.sel.clear();applySkin();view='list';closePop();closePP();$('list').hidden=false;['cardsPage','cfgPage'].forEach(i=>{const e=$(i);if(e)e.hidden=true});renderList();booted=true;
+          const stored=await kv.set('state',G);flush();toast(stored?'完整备份导入成功':'备份已导入，但本机存储写入失败，请立即重新导出备份并刷新后检查');
+        }catch(e){console.error('完整备份导入失败',e);toast('导入过程中发生错误，建议重新打开网站后再试')}
+      },'确认导入');
+    };
+    try{rd.readAsText(file,'UTF-8')}catch(e){toast('无法读取此文件，请重新选择');cleanup()}
+  };
+  f.addEventListener('cancel',()=>{cleanup()});
+  /* 必须在真实点击事件的同步调用链内触发系统文件选择器 */
+  try{f.click()}catch(e){cleanup();toast('无法打开文件选择器，请在 Safari 中打开网站后重试')}
+  setTimeout(()=>{if(!handled&&!f.files?.length)cleanup()},120000);
 }
 
 
