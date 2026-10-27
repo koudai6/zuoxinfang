@@ -158,10 +158,11 @@ input[type=checkbox]:checked::after{transform:translateX(18px)}
 .pay-foot{font-size:11px;padding:6px 14px;background:none;border-top:1px solid rgba(255,255,255,.3);opacity:.92}
 /* 表情包 */
 .pic.stk img{max-height:140px;max-width:140px;border-radius:8px}
-.stk-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:auto;align-content:start;gap:12px;max-height:56vh;overflow-y:auto;flex:none;-webkit-overflow-scrolling:touch;padding:2px 1px 8px}
-.panel .stk-t{position:relative;display:block;width:100%;height:auto;min-height:0;padding:0;border:1px solid rgba(120,150,190,.18);border-radius:14px;background:#f7f8fa;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.stk-t::before{content:"";display:block;padding-top:100%}
-.stk-t img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;padding:5px;box-sizing:border-box}
+.stk-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:auto;align-content:start;gap:10px;max-height:56vh;overflow-y:auto;flex:none;-webkit-overflow-scrolling:touch;padding:2px 1px 8px}
+/* iOS Safari compatibility: give sticker cells a real square size instead of relying on percentage padding */
+.panel .stk-t{position:relative;display:block;appearance:none;-webkit-appearance:none;align-self:stretch;width:100%;height:auto;aspect-ratio:1 / 1;min-height:88px;padding:0;border:1px solid rgba(120,150,190,.18);border-radius:14px;background:#f7f8fa;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);line-height:0;font-size:0;flex:none}
+.stk-t::before{content:none;display:none}
+.stk-t img{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain;display:block;padding:5px;box-sizing:border-box;pointer-events:none}
 .stk-t.off img{opacity:.4}
 .stk-t .x{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:#e5484d;color:#fff;font-size:14px;line-height:20px;text-align:center}
 .bgwrap{display:flex;flex-direction:column;gap:10px}
