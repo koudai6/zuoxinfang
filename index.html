@@ -1782,6 +1782,9 @@ function bgTab(body){
   ki.value=typeof G.sys.kbPad==='number'?G.sys.kbPad:'';ki.style.cssText=pi.style.cssText;
   ki.onchange=()=>{const v=ki.value===''?null:Math.min(500,Math.max(0,Math.round(Number(ki.value))));if(v!==null&&!isFinite(v))return;G.sys.kbPad=v;save();toast(v===null?'键盘高度：自动':'键盘高度 '+v+'px')};
   kl.append(h('span','','键盘高度估算（px，仅键盘盖住输入栏时生效，留空=自动）'),ki);w.append(kl);
+  const dl=h('label','sw'),dc=document.createElement('input');dc.type='checkbox';dc.checked=!!G.sys.kbDbg;
+  dc.onchange=()=>{G.sys.kbDbg=dc.checked;save();if(window.kbDebug)kbDebug()};
+  dl.append(h('span','','键盘调试浮层（排查键盘问题用，平时关闭）'),dc);w.append(dl);
   const btn=(t,fn)=>{const x=h('button','bgbtn',t);x.onclick=fn;w.append(x)};
   btn('测试后台保活：立即启动并刷新锁屏卡片',async()=>{
     const ok=await startKeep();
@@ -1844,6 +1847,19 @@ function bgTab(body){
     app.style.transform=kb&&vv&&vv.offsetTop>0?'translate3d(0,'+vv.offsetTop+'px,0)':'';
     if(kb&&document.activeElement&&document.activeElement.id==='ta'){const c=$('chat');if(c)c.scrollTop=c.scrollHeight}
   };
+  /* 键盘调试浮层（设置→后台里打开）：弹键盘时截图发给开发者，用来定位 iOS 主屏幕模式的键盘问题 */
+  let dbgEl=null;
+  const dbg=()=>{
+    if(!(G.sys&&G.sys.kbDbg)){if(dbgEl){dbgEl.remove();dbgEl=null}return}
+    if(!dbgEl){dbgEl=document.createElement('div');dbgEl.style.cssText='position:fixed;top:66px;left:6px;right:6px;z-index:99999;pointer-events:none;font:11px/1.35 ui-monospace,Menlo,monospace;color:#0f0;background:rgba(0,0,0,.78);padding:4px 6px;border-radius:6px;white-space:pre-wrap';document.body.append(dbgEl)}
+    const bar=document.querySelector('footer.bar'),br=bar?bar.getBoundingClientRect():{top:0,bottom:0},ar=app.getBoundingClientRect();
+    const real=typing()&&vv&&vv.height<innerHeight-80;
+    dbgEl.textContent='innerH '+innerHeight+'  vvH '+(vv?Math.round(vv.height):'-')+'  vvTop '+(vv?Math.round(vv.offsetTop):'-')+'  vvPageTop '+(vv?Math.round(vv.pageTop):'-')+'  scrollY '+Math.round(scrollY)+'\n'+
+      'mode '+(real?'real':(ovl&&typing())?'ovl':'none')+'  typing '+typing()+'  fullH '+fullH+'  screenH '+screen.height+'\n'+
+      'app top '+Math.round(ar.top)+' h '+Math.round(ar.height)+'  tf '+(app.style.transform||'-')+'\n'+
+      'bar top '+Math.round(br.top)+' bottom '+Math.round(br.bottom)+'  sab '+document.documentElement.style.getPropertyValue('--sab');
+  };
+  window.kbDebug=dbg;setInterval(dbg,200);
   const sched=()=>{if(!raf)raf=requestAnimationFrame(apply)};
   if(vv){vv.addEventListener('resize',sched);vv.addEventListener('scroll',sched)}
   addEventListener('resize',sched);addEventListener('orientationchange',sched);addEventListener('pageshow',sched);

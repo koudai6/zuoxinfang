@@ -1,4 +1,4 @@
-// v2 keyboard-fix
+// v3 keyboard-debug
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch',()=>{});
