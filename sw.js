@@ -1,4 +1,4 @@
-// v5 keyboard-ovl-translate
+// v7 sticky-ovl-fixed
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch',()=>{});
