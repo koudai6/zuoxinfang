@@ -1065,8 +1065,6 @@ header{display:grid;grid-template-columns:88px 1fr 88px;gap:0;padding:6px 10px 8
   #dce .lscroll{max-height:calc(94dvh - 70px);padding:8px 16px 16px!important}
 }
 
-/* 键盘适配兜底：聊天页高度跟随可视区域 */
-html.kb .bar{padding-bottom:8px}
 </style>
 </head>
 <body>
@@ -1780,13 +1778,6 @@ function bgTab(body){
   pi.value=typeof G.sys.bottomPad==='number'?G.sys.bottomPad:'';pi.style.cssText='width:80px;text-align:right;border:0;background:transparent;font:inherit;color:var(--blue)';
   pi.onchange=()=>{const v=pi.value===''?null:Math.min(120,Math.max(0,Math.round(Number(pi.value))));if(v!==null&&!isFinite(v))return;G.sys.bottomPad=v;save();if(window.relayout)relayout();toast(v===null?'底部留白：自动':'底部留白 '+v+'px')};
   pl.append(h('span','','底栏底部留白（px，留空=自动）'),pi);w.append(pl);
-  const kl=h('label','sw'),ki=document.createElement('input');ki.type='number';ki.inputMode='numeric';ki.min='0';ki.max='500';ki.placeholder='自动';
-  ki.value=typeof G.sys.kbPad==='number'?G.sys.kbPad:'';ki.style.cssText=pi.style.cssText;
-  ki.onchange=()=>{const v=ki.value===''?null:Math.min(500,Math.max(0,Math.round(Number(ki.value))));if(v!==null&&!isFinite(v))return;G.sys.kbPad=v;save();toast(v===null?'键盘高度：自动':'键盘高度 '+v+'px')};
-  kl.append(h('span','','键盘高度估算（px，仅键盘盖住输入栏时生效，留空=自动）'),ki);w.append(kl);
-  const dl=h('label','sw'),dc=document.createElement('input');dc.type='checkbox';dc.checked=!!G.sys.kbDbg;
-  dc.onchange=()=>{G.sys.kbDbg=dc.checked;save();if(window.kbDebug)kbDebug()};
-  dl.append(h('span','','键盘调试浮层（排查键盘问题用，平时关闭）'),dc);w.append(dl);
   const btn=(t,fn)=>{const x=h('button','bgbtn',t);x.onclick=fn;w.append(x)};
   btn('测试后台保活：立即启动并刷新锁屏卡片',async()=>{
     const ok=await startKeep();
@@ -1814,218 +1805,42 @@ function bgTab(body){
   body.append(w);
 }
 
-/* ========== 键盘适配 v7：ovl 粘性顶起，消除「弹一下又下去」 ========== */
+/* ========== 锁屏：键盘弹出也不让页面晃动，禁止双指缩放 ========== */
 (()=>{
-  const vv=window.visualViewport,app=$('app');
-  let raf=0,lastH=-1,fullH=0,ovl=false,ovlT=0,lastTf='',settleTimer=0;
-  const probe=document.createElement('div');
-  probe.style.cssText='position:fixed;top:0;bottom:0;left:0;width:1px;visibility:hidden;pointer-events:none';
-  document.body.append(probe);
-
-  const typing=()=>{
-    const a=document.activeElement;
-    return !!a&&(a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&!/^(checkbox|radio|file|color|range|button|submit)$/.test(a.type)));
-  };
-  const phone=()=>innerWidth<=700&&('ontouchstart' in window);
-
-  // 估算键盘高度（含候选词栏）。设置→后台→键盘高度 可手动覆盖
-  const estKb=()=>{
-    const man=G.sys&&G.sys.kbPad;
-    if(typeof man==='number'&&man>0)return man;
-    const base=fullH||innerHeight||700;
-    return Math.round(Math.min(360,Math.max(280,base*0.42)));
-  };
-
+  const vv=window.visualViewport,app=$('app');let raf=0,lastH=-1,fullH=0;
+  const probe=document.createElement('div');probe.style.cssText='position:fixed;top:0;bottom:0;left:0;width:1px;visibility:hidden;pointer-events:none';document.body.append(probe);
+  const typing=()=>{const a=document.activeElement;return !!a&&(a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&!/^(checkbox|radio|file|color|range|button|submit)$/.test(a.type)))};
   const apply=()=>{
     raf=0;
-    const isTyping=typing();
-    // real：系统缩小了可视区域
-    const real=isTyping&&vv&&vv.height<innerHeight-80;
-    // 关键：一旦进入 ovl，在明确清掉之前始终保持顶起（不再依赖 isTyping 瞬时值）
-    // 这样 activeElement 闪断一帧也不会把输入框拉下去
-    const kb=real||ovl;
-
+    /* 键盘没弹出时不用 visualViewport 的高度（iOS 主屏幕模式下它可能偏小，会让底栏悬空），直接交给 CSS 的整屏高度 */
+    const kb=typing()&&vv&&vv.height<innerHeight-80;
     if(!kb){
-      const standalone=matchMedia('(display-mode: standalone)').matches||!!navigator.standalone;
+      /* 以网页实际可绘制的高度为准（iOS 主屏幕模式下它可能比屏幕矮一截，矮的那一截网页画不到） */
+      const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
       const sh=innerWidth<=innerHeight?screen.height:screen.width;
-      const H=Math.max(innerHeight,Math.round(probe.getBoundingClientRect().height)||innerHeight);
-      if(H!==fullH){
-        fullH=H;
-        document.documentElement.style.setProperty('--H',H+'px');
-      }
-      document.body.style.height=H+'px';
-      document.body.style.bottom='auto';
-      document.documentElement.style.height=Math.max(H,screen.height||H)+'px';
-      const gap=standalone?sh-H:0;
-      const man=G.sys&&G.sys.bottomPad;
+      const H=Math.max(innerHeight,Math.round(probe.getBoundingClientRect().height));
+      if(H!==fullH){fullH=H;document.documentElement.style.setProperty('--H',H+'px')}
+      document.body.style.height=H+'px';document.body.style.bottom='auto';document.documentElement.style.height=Math.max(H,screen.height||H)+'px';document.body.style.backgroundColor=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()||'#fff';document.documentElement.style.backgroundColor=document.body.style.backgroundColor;
+      /* 网页底边离屏幕底边还有一段距离时，底部安全区已经不在网页里，不再额外留白 */
+      const gap=standalone?sh-H:0,man=G.sys&&G.sys.bottomPad;
       const val=(typeof man==='number')?man:(gap>20?0:null);
       document.documentElement.style.setProperty('--sab',val!=null?val+'px':'env(safe-area-inset-bottom)');
     }
-
-    let h=fullH||innerHeight;
-    let tf='';
-
-    if(kb){
-      document.documentElement.style.setProperty('--sab','0px');
-      if(real){
-        h=Math.round(vv.height);
-        if(vv.offsetTop>0)tf='translate3d(0,'+Math.round(vv.offsetTop)+'px,0)';
-      }else{
-        // ovl：整页上移，高度不变
-        h=fullH||innerHeight;
-        tf='translate3d(0,-'+estKb()+'px,0)';
-      }
-    }
-
-    if(h!==lastH){
-      lastH=h;
-      app.style.setProperty('height',h+'px','important');
-    }
-    if(tf!==lastTf){
-      lastTf=tf;
-      app.style.transform=tf;
-    }
-    document.documentElement.classList.toggle('kb',!!kb);
-    document.documentElement.style.setProperty('--vvh',(kb?h:innerHeight)+'px');
-    document.documentElement.style.setProperty('--vvt',(vv?vv.offsetTop:0)+'px');
-
-    if(kb&&isTyping&&document.activeElement&&document.activeElement.id==='ta'){
-      const c=$('chat');
-      if(c)c.scrollTop=c.scrollHeight;
-    }
+    const h=kb?vv.height:fullH;
+    if(h!==lastH){lastH=h;app.style.height=h+'px'}
+    document.documentElement.style.setProperty('--vvh',(kb?vv.height:innerHeight)+'px');document.documentElement.style.setProperty('--vvt',(vv?vv.offsetTop:0)+'px');
+    app.style.transform=kb&&vv.offsetTop>0?'translate3d(0,'+vv.offsetTop+'px,0)':'';
   };
-
   const sched=()=>{if(!raf)raf=requestAnimationFrame(apply)};
-
-  // 调试浮层
-  let dbgEl=null,dbgTimer=0;
-  const dbg=()=>{
-    if(!(G.sys&&G.sys.kbDbg)){
-      if(dbgEl){dbgEl.remove();dbgEl=null}
-      if(dbgTimer){clearInterval(dbgTimer);dbgTimer=0}
-      return;
-    }
-    if(!dbgEl){
-      dbgEl=document.createElement('div');
-      dbgEl.style.cssText='position:absolute;top:66px;left:6px;right:6px;z-index:99999;pointer-events:none;font:11px/1.35 ui-monospace,Menlo,monospace;color:#0f0;background:rgba(0,0,0,.78);padding:4px 6px;border-radius:6px;white-space:pre-wrap';
-      document.body.append(dbgEl);
-      dbgTimer=setInterval(dbg,400);
-    }
-    const bar=document.querySelector('footer.bar');
-    const br=bar?bar.getBoundingClientRect():{top:0,bottom:0};
-    const ar=app.getBoundingClientRect();
-    const real=typing()&&vv&&vv.height<innerHeight-80;
-    const mode=real?'real':ovl?'ovl':'none';
-    dbgEl.textContent='innerH '+innerHeight+'  vvH '+(vv?Math.round(vv.height):'-')+'  vvTop '+(vv?Math.round(vv.offsetTop):'-')+'  scrollY '+Math.round(scrollY)+'\n'+
-      'mode '+mode+'  typing '+typing()+'  ovl '+ovl+'  fullH '+fullH+'  estKb '+estKb()+'\n'+
-      'app top '+Math.round(ar.top)+' h '+Math.round(ar.height)+'  tf '+(app.style.transform||'-')+'\n'+
-      'bar top '+Math.round(br.top)+' bottom '+Math.round(br.bottom)+'  sab '+document.documentElement.style.getPropertyValue('--sab');
-  };
-  window.kbDebug=dbg;
-
-  if(vv){
-    vv.addEventListener('resize',sched);
-    vv.addEventListener('scroll',sched);
-  }
-  addEventListener('resize',sched);
-  addEventListener('orientationchange',()=>{lastH=-1;fullH=0;lastTf='';sched()});
-  addEventListener('pageshow',()=>{lastH=-1;fullH=0;lastTf='';sched()});
-
-  const heal=()=>{
-    if(typing()||ovl)return;
-    const maxH=Math.max(fullH,innerHeight,screen.height||0);
-    if(innerHeight>=maxH-8)return;
-    const scroller=$('chat');
-    const st=scroller?scroller.scrollTop:0;
-    app.style.display='none';
-    void app.offsetHeight;
-    app.style.display='';
-    if(scroller)scroller.scrollTop=st;
-    lastH=-1;fullH=0;lastTf='';
-    sched();
-  };
-
-  // 确认失焦后才收回；中间任何 focusin 都会取消
-  const settle=()=>{
-    clearTimeout(settleTimer);
-    settleTimer=setTimeout(()=>{
-      if(typing())return;
-      // 再等一轮，防止 iOS 短暂 blur 又 focus
-      settleTimer=setTimeout(()=>{
-        if(typing())return;
-        ovl=false;
-        app.style.transform='';
-        lastTf='';
-        lastH=-1;
-        apply();
-        setTimeout(()=>{if(!typing()&&!ovl)heal()},400);
-      },280);
-    },220);
-  };
-
-  // 点到输入框立刻顶起（touchstart 比 focus 更早）
-  const preLift=()=>{
-    if(!phone())return;
-    clearTimeout(settleTimer);
-    if(vv&&vv.height>=innerHeight-80){
-      ovl=true;
-      lastH=-1;
-      sched();
-    }
-  };
-  document.addEventListener('touchstart',e=>{
-    const t=e.target;
-    if(t&&(t.tagName==='TEXTAREA'||(t.tagName==='INPUT'&&!/^(checkbox|radio|file|color|range|button|submit)$/.test(t.type))))preLift();
-  },{passive:true,capture:true});
-
-  document.addEventListener('focusin',()=>{
-    clearTimeout(settleTimer);
-    if(phone()&&vv&&vv.height>=innerHeight-80){
-      ovl=true;
-      lastH=-1;
-    }
-    sched();
-    setTimeout(sched,100);
-    setTimeout(sched,300);
-    clearTimeout(ovlT);
-    ovlT=setTimeout(()=>{
-      if(typing()&&phone()&&vv&&vv.height>=innerHeight-80){
-        ovl=true;
-        lastH=-1;
-        sched();
-      }
-    },450);
-  });
-
-  document.addEventListener('focusout',()=>{
-    clearTimeout(ovlT);
-    settle();
-  });
-
-  if(vv)vv.addEventListener('resize',()=>{
-    if(typing()||ovl){sched();return}
-    if(!(vv.height<innerHeight-80))settle();
-  });
-
-  document.addEventListener('scroll',()=>{
-    if(!typing()&&!ovl&&scrollY)scrollTo(0,0);
-  },{passive:true});
-
-  // 输入中兜底：保持 ovl
-  let lastVV=-1,lastTop=-1;
-  setInterval(()=>{
-    if(typing()&&phone()&&vv&&vv.height>=innerHeight-80)ovl=true;
-    if(!ovl&&!typing())return;
-    const vh=vv?Math.round(vv.height):0;
-    const vt=vv?Math.round(vv.offsetTop):0;
-    if(vh!==lastVV||vt!==lastTop||(ovl&&!app.style.transform)){
-      lastVV=vh;lastTop=vt;
-      sched();
-    }
-  },250);
-
-  apply();
-  window.relayout=()=>{lastH=-1;fullH=0;lastTf='';sched()};
+  if(vv){vv.addEventListener('resize',sched);vv.addEventListener('scroll',sched)}
+  addEventListener('resize',sched);addEventListener('orientationchange',sched);addEventListener('pageshow',sched);
+  /* 键盘收起后 iOS 常常不及时恢复：连续多次重算，并把被键盘顶偏的页面滚回原位 */
+  const settle=()=>{[0,60,160,320,600,1000,1600].forEach(d=>setTimeout(()=>{apply();if(!typing()||!(vv&&vv.height<innerHeight-80)){if(scrollY||(vv&&vv.offsetTop))scrollTo(0,0);app.style.transform='';if(!typing()){lastH=-1;apply()}}},d))};
+  document.addEventListener('focusin',()=>{sched();setTimeout(sched,300);setTimeout(sched,700)});
+  document.addEventListener('focusout',settle);
+  if(vv)vv.addEventListener('resize',()=>{if(!(vv.height<innerHeight-80))settle()});
+  document.addEventListener('scroll',()=>{if(!typing()&&scrollY)scrollTo(0,0)},{passive:true});
+  apply();window.relayout=()=>{lastH=-1;fullH=0;sched()};
   document.addEventListener('gesturestart',e=>e.preventDefault());
 })();
 
